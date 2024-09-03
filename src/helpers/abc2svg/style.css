@@ -1,0 +1,84 @@
+/**
+* Styling page UI
+*/
+.text, button {
+    font-size: 1.15em;
+    font-family: sans-serif;
+    line-height: 1.5em;
+}
+
+.error {
+	color: #c02424;
+}
+
+.playback-controls {
+    margin: auto;
+    width: 100%;
+    padding: 0.5em;
+    text-align: center;
+}
+
+.playback-controls button {
+    color: white;
+    border: 1px solid #1964a5;
+    background-color: #2e7fc5;
+    border-radius: 0.3em;
+    line-height: 2em;
+    padding: 0 2.5em;
+    font-size: 1em;
+    font-weight: normal;
+    margin: 0 0.2em;
+}
+
+.result-area {
+	margin: 0;
+	text-align: center;
+}
+
+/**
+* Styling music content
+*/
+.abcr {
+	fill: #d00000;
+	fill-opacity: 0;
+	z-index: 15;
+}
+
+.fill {
+    fill: currentColor
+}
+
+.stroke {
+    stroke: currentColor;
+    fill: none
+}
+
+.music text,
+.music tspan {
+    fill: currentColor
+}
+
+.f1 {
+    font: 20px serif
+}
+
+.f2 {
+    font: italic 14px serif
+}
+
+.f3 {
+    font: 1px arial
+}
+
+.f4 {
+    font: bold 13px serif
+}
+
+.music {
+    fill: currentColor
+}
+
+/* Styling chart */
+.chart-container {
+    padding: 0 28%;
+}

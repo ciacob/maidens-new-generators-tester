@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>%PAGE_TITLE%</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <link rel="stylesheet" type="text/css" href="%HOME_DIR%/style.css">
+</head>
+
+<body>
+
+    <!-- MIDI Playback Controls -->
+    <div class="text playback-controls">
+        <button id="playBackButton">Play</button>
+        <button id="stopButton">Stop</button>
+    </div>
+
+    <!-- SVG Rendering Area -->
+    <div class="result-area" id="target">
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" viewBox="0 0 595 144">
+            <text x="250" y="100" font-family="serif" font-size="12">Rendering music...</text>
+        </svg>
+    </div>
+
+    <!-- Chart canvas -->
+	<div class="chart-container">
+	    <canvas id="myChart"></canvas>
+	</div>
+
+    <!-- Scripts -->
+    <script src="%HOME_DIR%/abc2svg.js" type="text/javascript"></script>
+    <script src="%HOME_DIR%/play.js" type="text/javascript"></script>
+    <script src="%HOME_DIR%/edit.js" type="text/javascript"></script>
+    <script src="%HOME_DIR%/edit-en.js" type="text/javascript"></script>
+	<script src="%HOME_DIR%/charts/Chart.bundle.js" type="text/javascript"></script>
+
+    <script type="text/javascript">
+
+    	// Render Music
+	    var result = %ABC_SOURCE%;
+	    var abc_src = result.value;
+	    render();
+
+	    // Render Chart
+	    var chartConfig = {
+		    data: JSON.parse(%CHART_DATA%),
+		    type: 'line',
+		    options: {
+		    	responsive: true
+		    }
+		}
+		var ctx = document.getElementById('myChart').getContext('2d');
+		var chart = new Chart(ctx, chartConfig);
+    </script>
+</body>
+
+</html>

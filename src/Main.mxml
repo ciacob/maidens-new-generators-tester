@@ -1,0 +1,1150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark" 
+					   xmlns:mx="library://ns.adobe.com/flex/mx"
+					   xmlns:ns="http://flex.apache.org/experimental/ns"
+					   xmlns:components="eu.claudius.iacob.ui.components.*"
+					   preinitialize="_onPreinitialize(event)"
+					   initialize="_onInitialize (event)"
+					   showStatusBar="false" xmlns:ui="eu.claudius.iacob.desktop.presetmanager.ui.*">
+	
+	<fx:Declarations>
+		<s:Fade id="onShow" alphaTo="1" duration="250"/>
+		<s:Fade id="onHide" alphaTo="0" duration="250" startDelay="100"/>
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import flash.net.navigateToURL;
+			
+			import mx.events.FlexEvent;
+			import mx.utils.ObjectProxy;
+			
+			import eu.claudius.iacob.desktop.presetmanager.lib.Configuration;
+			import eu.claudius.iacob.desktop.presetmanager.lib.Payload;
+			import eu.claudius.iacob.desktop.presetmanager.lib.PresetEvent;
+			import eu.claudius.iacob.desktop.presetmanager.lib.PresetManager;
+			import eu.claudius.iacob.music.knowledge.instruments.Piano;
+			import eu.claudius.iacob.music.knowledge.instruments.interfaces.IMusicalInstrument;
+			import eu.claudius.iacob.music.knowledge.timesignature.CommonTime;
+			import eu.claudius.iacob.music.knowledge.timesignature.helpers.TimeSignatureEntry;
+			import eu.claudius.iacob.music.knowledge.timesignature.helpers.TimeSignatureMap;
+			import eu.claudius.iacob.music.knowledge.timesignature.interfaces.ITimeSignatureDefinition;
+			import eu.claudius.iacob.music.knowledge.timesignature.interfaces.ITimeSignatureEntry;
+			import eu.claudius.iacob.music.knowledge.timesignature.interfaces.ITimeSignatureMap;
+			import eu.claudius.iacob.ui.components.Constants;
+			import eu.claudius.iacob.ui.components.ParameterChangeEvent;
+			
+			import ro.ciacob.desktop.io.TextDiskReader;
+			import ro.ciacob.desktop.io.TextDiskWritter;
+			import ro.ciacob.desktop.signals.PTT;
+			import ro.ciacob.desktop.ui.UiFlexBuilder;
+			import ro.ciacob.desktop.ui.UiGenerator;
+			import ro.ciacob.maidens.generators.core.MusicRequest;
+			import ro.ciacob.maidens.generators.core.SettingsList;
+			import ro.ciacob.maidens.generators.core.abstracts.AbstractGeneratorModule;
+			import ro.ciacob.maidens.generators.core.constants.CoreOperationKeys;
+			import ro.ciacob.maidens.generators.core.interfaces.IGeneratorModule;
+			import ro.ciacob.maidens.generators.core.interfaces.IMusicPitch;
+			import ro.ciacob.maidens.generators.core.interfaces.IMusicRequest;
+			import ro.ciacob.maidens.generators.core.interfaces.IMusicUnit;
+			import ro.ciacob.maidens.generators.core.interfaces.IMusicalBody;
+			import ro.ciacob.maidens.generators.core.interfaces.IParameter;
+			import ro.ciacob.maidens.generators.core.interfaces.IParametersList;
+			import ro.ciacob.maidens.generators.core.interfaces.ISettingsList;
+			import ro.ciacob.maidens.generators.core.ui.ParameterUI;
+			import ro.ciacob.maidens.generators.core.ui.PointTools;
+			import ro.ciacob.maidens.generators.harmony.HarmonyGenerator;
+			import ro.ciacob.maidens.generators.harmony.constants.ParameterNames;
+			import ro.ciacob.utils.Files;
+			import ro.ciacob.utils.Objects;
+			import ro.ciacob.utils.Strings;
+			import ro.ciacob.utils.Time;
+			import ro.ciacob.utils.constants.CommonStrings;
+			
+			// UI Constants
+			private static const COLLAPSED_PREFERRED_WIDTH : Number = 360;
+			private static const EXPANDED_PREFERRED_WIDTH : Number = 1100;
+			private static const PREFERRED_HEIGHT : Number = 700;
+			private static const MIN_HEIGHT : Number = 600;
+			private static const MIN_BUTTON_WIDTH : Number = 100;
+			private static const LEFT_PANE_MIN_WIDTH : Number = 322;
+			private static const LEFT_PANE_RIGHT_GUTTER : Number = 30;
+			private static const GAP_BETWEEN_PANES : Number = 35;
+			private static const SPACE : Number = 10;
+			
+			private static const PRESET_FILE_EXTENSION : String = 'harmonyPreset';
+			private static const PRESETS_HOME_DIR : String = 'harmony-generator-preset';
+			
+			// Template & generated content constants
+			public static const CHORD_BEGIN_MARK:String = "[";
+			public static const CHORD_END_MARK:String = "]";
+			private static const LOWER_TOKEN:String = '%lower%';
+			private static const UPPER_TOKEN:String = '%upper%';
+			private static const ABC_CHROMATIC_SCALE : Array = [ 'C', '^C', 'D', '^D', 'E', 'F', '^F', 'G', '^G', 'A', '^A', 'B' ];
+			private static const ABC_OCTAVE_MARKS:Array = ["%upper%,,,,", "%upper%,,,", "%upper%,,", "%upper%,", "%upper%", "%lower%", "%lower%'", "%lower%''", "%lower%'''", "%lower%''''"];
+			private static const ABC_TEMPLATE : String = 'X:1\nT:%PAGE_TITLE%\nL:1/1\nV:Pno11 clef=treble transpose=0\n%\n%%staves Pno11\n%%measurenb 0\n%\n% PAGE LAYOUT\n%\n%%pageheight 29.7cm\n%%pagewidth 21cm\n%%topmargin 1.5cm\n%%botmargin 1cm\n%%leftmargin 1cm\n%%rightmargin 1cm\n%%scale 1.2\n%\n% SPACING\n%\n%%topspace 1cm\n%%titlespace 0.7cm\n%%composerspace 0cm\n%%musicspace 1.2cm\nK:Cmaj\n%\n% FONT\n%%titlefont 28\n%%subtitlefont 24\n%\n[V:Pno11]\n%CHORDS% |';
+			private static const METER : String = '[M:%s] ';
+			
+			// Business logic constants
+			private static const OUTPUT_DIR : File = File.desktopDirectory;
+			private static const OUTPUT_DIR_NAME : String = 'Output - Generators Tester';
+			private static const OUTPUT_FILE_NAME : String = 'Generated Music.html';
+			private static const ABC_EXTENSION : String = 'abc';
+			private static const TITLE_TEMPLATE : String = '%s – %s';
+
+			// Shortcuts
+			private static const TYPE_ARRAY : uint = CoreOperationKeys.TYPE_ARRAY;
+			private static const TYPE_INT : uint = CoreOperationKeys.TYPE_INT;
+			private static const PARAM_UID : String = CoreOperationKeys.PARAM_UID;
+			private static const TWEENING_STATUS : String = CoreOperationKeys.TWEENING_STATUS;
+			private static const EDITOR_SERVICE : String = CoreOperationKeys.EDITOR_SERVICE_NOTICE;
+			private static const EDITOR_FOCUS : String = CoreOperationKeys.EDITOR_FOCUS_NOTICE;
+			private static const DATA_ITEM : String = eu.claudius.iacob.ui.components.Constants.DATA_ITEM;
+			private static const ITEM_UID : String = eu.claudius.iacob.ui.components.Constants.ITEM_UID;
+			private static const NODE_TIME : String = eu.claudius.iacob.ui.components.Constants.NODE_TIME;
+			private static const NODE_AMPLITUDE : String = eu.claudius.iacob.ui.components.Constants.NODE_AMPLITUDE;
+			
+			// Functional logic constants
+			private static const CUSTOM_COMPONENT_FQN : String = getQualifiedClassName (ParameterUI).replace ('::', '.');
+			private static const DATA_PROVIDER_NAME : String = 'value';
+			private static const SUBSCRIBE : Function = PTT.getPipe().subscribe;
+			
+			// Compiler helpers
+			private var _helper1 : ParameterUI;
+			
+			private var _generator : IGeneratorModule;
+			private var _parameters : IParametersList;
+			private var _uiGenerator : UiGenerator;
+			private var _request : IMusicRequest;
+			private var _formFields : Object;
+			private var _generatedMusic : IMusicalBody;
+			
+			// Stores the unique id of the tweenable parameter that is currently active/editable
+			// inside the envelope editor
+			private var _activeParamUid : String;
+
+			[Bindable]
+			private var _envelopeEditorVisible : Boolean = false;
+			
+			[Bindable]
+			private var _formReady : Boolean = false;
+			
+			[Bindable]
+			private var _progress : Number = 0;
+			
+			// Maintains a map with all Array typed parameters that currently employ tweening
+			private var _animatedParameters : Object = {};
+			
+			// Maintains a map with all parameters' current values, indexed by the parameter's name
+			private var _currentSettings : Object;
+			
+			/**
+			 * Equivalent of a "constructor" function for MXML classes.
+			 * This function runs after the class was initiatialized, but before any
+			 * measurements or children creation activity.
+			 */
+			private function _onPreinitialize (event : FlexEvent) : void {
+				
+				// Listen to parameter UI messages
+				SUBSCRIBE (EDITOR_SERVICE, _onEditorServiceNotice);
+				SUBSCRIBE (EDITOR_FOCUS, _onEditorFocusNotice);
+				
+				// Setup initial window bounds
+				width = COLLAPSED_PREFERRED_WIDTH;
+				minWidth = COLLAPSED_PREFERRED_WIDTH;
+				height = PREFERRED_HEIGHT;
+				minHeight = MIN_HEIGHT;
+			}
+			
+			/**
+			 * Executed at program start. Retrieves module parameters and renders them
+			 * visually, so that the user can provide values for them.
+			 */
+			private function _onInitialize (event:Event):void {
+				_generator = new HarmonyGenerator;
+				_generator.callback = _onProcessUpdate;
+				_parameters = _generator.parametersList;
+				
+				
+				// Initialize the PresetManager
+				presetManager.builtinConfigurations = PresetManager.hasBuiltInCache (PRESETS_HOME_DIR)? 
+					null : _produceBuiltInConfigurations();
+				presetManager.fileExtension = PRESET_FILE_EXTENSION;
+				presetManager.homeDirName = PRESETS_HOME_DIR;
+				presetManager.addEventListener (PresetEvent.PRESET_CHANGED, _onPresetChanged);
+				
+				// Sanitize parameters with multiple values prior to rendering them
+				_parameters.forEach (function (parameter : IParameter, index : int, list : IParametersList) : void {
+					var type : uint = parameter.type;
+					if (type == TYPE_ARRAY) {
+						var points : Array = (parameter.payload as Array);
+						parameter.payload = PointTools.sanitizeEnvelopePoints (points);
+					}
+				});
+				_renderParameters (_parameters, configurationForm, _onFormReady);
+			}
+			
+			/**
+			 * Executed when updates are available regarding the ongoing generation process
+			 */
+			private function _onProcessUpdate (info : Object) : void {
+				_progress = info.percentComplete;
+				if (info.state == AbstractGeneratorModule.STATUS_COMPLETED) {
+					_generatedMusic = _generator.lastResult;
+					_renderMusic (_generatedMusic);
+				}
+			}
+			
+			/**
+			 * Executed when the form containing generator parameters has been rendered and
+			 * is ready for use.
+			 */
+			private function _onFormReady () : void {
+				
+				// Watch every item renderer in order to detect value changes for non-animated parameters 
+				if (_parameters && _parameters.length > 0) {
+					var mover : Function = function (parameter : IParameter, index : int, list : IParametersList) : void {
+						var renderer : ParameterUI = (_uiGenerator.getComponentByName(parameter.uid) as ParameterUI);
+						if (renderer) {
+							renderer.addEventListener(Event.CHANGE, _onRendererValueChanged);
+						}
+					}
+					_parameters.forEach (mover);				
+				}
+			}
+			
+			/**
+			 * Executed when user clicks on the envelope shaped button displayed in place of the slider
+			 * control, while "animate" is selected for a certain parameter. Focuses the parameter's
+			 * associated envelope inside the editor.
+			 */
+			private function _onEditorFocusNotice (info : Object) : void {
+				var id : String = (info[PARAM_UID] as String);
+				_focusParameterEnvelope (id);
+			}
+			
+			/**
+			 * Executed when the user interacts with a parameter inside the envelopes editor in
+			 * other ways than by altering its envelope points.
+			 */
+			private function _onParameterChange (event : ParameterChangeEvent) : void {
+				
+				// The "active" parameter has been changed inside the editor
+				if (event.type == ParameterChangeEvent.PARAMETER_CHANGE) {
+					_activeParamUid = event.data[DATA_ITEM][PARAM_UID] as String;
+				}
+			}
+			
+			/**
+			 * Executed when the user changes the color of a parameter inside the envelopes editor.
+			 */
+			private function _onParameterColorChange (event : ParameterChangeEvent) : void {
+				var payload : Object = event.data.dataItem;
+				var paramId : String = (payload.paramUid as String);
+				var paramColor : uint = (payload.color as uint);
+				var parameter : IParameter = _parameters.getByUid (paramId);
+				if (parameter) {
+					parameter.color = paramColor;
+					var renderer : ParameterUI = (_uiGenerator.getComponentByName (paramId) as ParameterUI);
+					if (renderer) {
+						renderer.color = paramColor;
+					}
+				}
+			}
+			
+			/**
+			 * Executed when the user alters a parameter's envelope (e.g., by
+			 * adding, removing or dragging nodes.
+			 */
+			private function _onNodesChange(event:ParameterChangeEvent) : void {
+				
+				// The envelope corresponding to the "Active" parameter has been changed
+				// inside the editor parameter (e.g., by adding, removing or dragging nodes). 
+				if (event.type == ParameterChangeEvent.NODES_CHANGE) {
+					var nodesSnapshot : Array = (event.data[DATA_ITEM] as Array);
+					if (nodesSnapshot && _activeParamUid && (_activeParamUid in _animatedParameters)) {
+						var parameter : IParameter = _parameters.getByUid (_activeParamUid);
+						if (parameter) {
+							var payload : Array = parameter.payload as Array;
+							payload.length = 0;
+							for (var i:int = 0; i < nodesSnapshot.length; i++) {
+								var nodeInfo : Object = nodesSnapshot[i];
+								payload[nodeInfo[NODE_TIME]] = nodeInfo[NODE_AMPLITUDE];
+							}
+							_respondToSettingUpdate(parameter.name, payload);
+							var renderer : ParameterUI = (_uiGenerator.getComponentByName(parameter.uid) as ParameterUI);
+							if (renderer) {
+								renderer.value = payload;
+							}
+						}
+					}
+				}
+			}
+			
+			/**
+			 * Executed when the value of a parameter changes inside of a parameter renderer (not inside of
+			 * the envelope editor).
+			 */
+			private function _onRendererValueChanged (event : Event) : void {
+				if (_parameters) {
+					var target : ParameterUI = (event.target as ParameterUI);
+					if (target) {
+						var value : Object = target.value;
+						var paramId : String = target.name;
+						var parameter : IParameter = _parameters.getByUid (paramId);
+						if (parameter) {
+							var name : String = parameter.name;
+							_respondToSettingUpdate (name, value);
+						}
+					}
+				}
+			}
+			
+			/**
+			 * Executed when user clicks on the "animate" checkbox inside the dedicated UI section of
+			 * a specific parameter. The exact action depends on the "tweeningStatus" property 
+			 * contained by the received `info` Object.
+			 * 
+			 * - if "tweeningStatus" is `true`, the editor is opened (if it was not already open),
+			 *   the parameter is added to the editor's worklist, and focused. Any subsequent change
+			 *   inside the editor, made to the parameter's associated envelope will be reflected in
+			 *   the parameter's `value`;
+			 * 
+			 * - if "tweeningStatus" is `false`, and no other parameter requires the editor's
+			 *   services, the editor is closed; otherwise, it is left open. Any previous change
+			 *   made inside the editor, to the parameter's associated envelope will be lost, as
+			 *   all values on the envelope except the first one wil be removed. The first value
+			 *   will become the parameter's (constant) value, and will be reflected by the slider
+			 *   control that will be displayed once "animate" is disengaged for that parameter.
+			 */
+			private function _onEditorServiceNotice (info : Object) : void {
+				var id : String = (info[PARAM_UID] as String);
+				var tweeningEngaged : Boolean = (info[TWEENING_STATUS] as Boolean);
+				if (tweeningEngaged) {
+					_engageTweeningFor (id);
+					_focusParameterEnvelope (id);
+				} else {
+					_disengageTweeningFor (id);
+				}
+			}
+			
+			/**
+			 * Executed when a new preset has been loaded inside the PresetManager.
+			 * Updates the current settings to match the selected preset.
+			 */
+			private function _onPresetChanged (event : PresetEvent) : void {
+				var presetSettings : Object = event.data;
+				if (presetSettings) {
+					_writeCurrentSettings (presetSettings);
+				}
+			}
+			
+			/**
+			 * Registers parameter with given id as requiring the envelope editor's services.
+			 */
+			private function _engageTweeningFor (parameterId : String) : void {
+				_animatedParameters[parameterId] = _parameters.getByUid (parameterId);
+				_updateEditorWorklist ();
+			}
+			
+			/**
+			 * Unregisters a parameter previously registered with `_engageTweeningFor()`.
+			 */
+			private function _disengageTweeningFor (parameterId : String) : void {
+				delete _animatedParameters[parameterId];
+				_updateEditorWorklist ();
+			}
+			
+			/**
+			 * Rebuilds the envelope editor's data provider, based on the current content of the 
+			 * `_animatedParameters` map.
+			 */
+			private function _updateEditorWorklist () : void {
+				if (parametersEditor) {
+					var dataset : Object = {};
+					var parameters : Array = [];
+					
+					// Transfer function, ensuring that the parameters having tweening engaged get loaded into the
+					// envelope editor in the same order as they were added inside the IParametersList instance
+					// (which is also the order they show in the UI).
+					var mover : Function = function (parameter : IParameter, index : int, list : IParametersList) : void {
+						var paramId : String = parameter.uid;
+						if (paramId in _animatedParameters) {
+							var paramDataset : Object = {};
+							paramDataset[PARAM_UID] = parameter.uid;
+							paramDataset.name = parameter.name;
+							paramDataset.color = parameter.color;
+							paramDataset.visible = true;
+							paramDataset.values = (parameter.payload as Array);
+							var paramProxy : ObjectProxy = new ObjectProxy (paramDataset);
+							parameters.push (paramProxy);
+						}
+						// TODO: also transfer here the result of the last generation task (they are called "actual curves"
+						// in envelope editor's parlance, and reflect the way the generator was able to actually respond
+						// to the demands of the "ideal curve", that is, the values plotted by the user on the envelope).
+					}
+					_parameters.forEach (mover);
+					dataset.parameters = parameters;
+					var proxy : ObjectProxy = new ObjectProxy (dataset);
+					
+					parametersEditor.dataProvider = proxy;
+					
+					// Hide or show the editor, based on whether there are envelopes to be edited or not
+					var isEditorNeeded : Boolean = !Objects.isEmpty (_animatedParameters);
+					if (isEditorNeeded) {
+						_showEnvelopeEditor();
+					} else {
+						_hideEnvelopeEditor (true);
+					}
+				}
+			}
+			
+			/**
+			 * Causes the envelope associated to the given parameter's uid to be focused (displayed on top)
+			 * inside the editor. Does nothing if the parameter was not previously added to the editor's
+			 * worklist.
+			 */
+			private function _focusParameterEnvelope (parameterId : String) : void {
+				if (parametersEditor.dataProvider) {
+					var loadedParameters : Array = (parametersEditor.dataProvider.parameters as Array);
+					if (loadedParameters) {
+						for (var i:int = 0; i < loadedParameters.length; i++) {
+							var parameter : Object = (loadedParameters[i] as Object);
+							if (parameter.paramUid == parameterId) {
+								parameter.selected = true;
+								parameter.visible = true;
+								parameter.locked = false;
+							} else {
+								parameter.selected = false;
+							}
+						}
+					}
+				}
+			}
+			
+			/**
+			 * Displays the "envelope editor" section, also enlarging the
+			 * window to accommodate the new UI.
+			 */
+			private function _showEnvelopeEditor () : void {
+				minWidth = EXPANDED_PREFERRED_WIDTH;
+				_envelopeEditorVisible = true;
+			}
+			
+			/**
+			 * Hides the "envelope editor" section, optionally shrinking the
+			 * window to reclaim screen real estate.
+			 */
+			private function _hideEnvelopeEditor (shrinkWindow : Boolean = false) : void {
+				minWidth = COLLAPSED_PREFERRED_WIDTH;
+				if (shrinkWindow) {
+					width = COLLAPSED_PREFERRED_WIDTH;
+				}
+				_envelopeEditorVisible = false;
+			}
+			
+			/**
+			 * Cycles the "envelope editor" section on and off. Allways
+			 * changes the window size accordingly.
+			 */
+			private function _toggleEnvelopeEditor () : void {
+				if (_envelopeEditorVisible) {
+					_hideEnvelopeEditor (true);		
+				} else {
+					_showEnvelopeEditor();
+				}
+			}
+			
+			/**
+			 * Executed when the "Abort" button is clicked in the parameters form.
+			 */
+			private function _abort () : void {
+				_generator.abort();
+			}
+			
+			/**
+			 * Executed when the "Generate" button is clicked in the parameters form.
+			 */
+			private function _generate () : void {
+				
+				// Immediately show the progress bar
+				onShow.end();
+				progress_bar.visible = true;
+				
+				// Setup a Music Request (what instruments shall play the generated music,
+				// what time signatures should the generated passage use and what values
+				// has the user chosen for every available parameter)
+				_request = new MusicRequest;
+				
+				// Instruments: for testing, Piano solo will do
+				var piano : IMusicalInstrument = new Piano;
+				var instruments : Vector.<IMusicalInstrument> = Vector.<IMusicalInstrument> ([piano]);
+				_request.instruments = instruments;
+				
+				// Time signatures: for testing, 8 measures of common time will do
+				var commonTimeDefinition : ITimeSignatureDefinition = new CommonTime;
+				var commonTimeEntry : ITimeSignatureEntry = new TimeSignatureEntry;
+				commonTimeEntry.repetitions = 8;
+				commonTimeEntry.signature = commonTimeDefinition;
+				var timeMap : ITimeSignatureMap = new TimeSignatureMap;
+				timeMap.push (commonTimeEntry);
+				_request.timeMap = timeMap;
+				
+				// Gather and apply user provided parameter values
+				var settings : ISettingsList = new SettingsList;
+				var mover : Function = function (parameter : IParameter, index : int, list : IParametersList) : void {
+					var userInput : Object = _formFields[parameter.uid];
+					
+					// Use default value if user has provided none
+					if (userInput === null || userInput === '') {
+						userInput = parameter.payload;
+					}
+					
+					// Apply multiple values.
+					if (parameter.type == TYPE_ARRAY) {
+						
+						trace ('\nApplying multiple (ARR) values for', parameter.name);
+						
+						var time : int;
+						var value : uint;
+						for (time = 0; time < userInput.length; time++) {
+							if (userInput[time] !== undefined) {
+								value = (userInput[time] as uint);
+								settings.setValueAt (parameter, time, value);
+								trace (time, '=>', value);
+							}
+						}
+					} 
+					
+					// Apply single value
+					else {
+						switch (parameter.type) {
+							case TYPE_INT:
+								var intVal : int = (userInput as int);
+								settings.setValueAt (parameter, 1, intVal);
+								
+								trace ('Applying single (INT) value for', parameter.name, '=>', userInput);
+								
+								break;
+
+							// TODO: add the rest of supported types when they are really needed
+						}
+					}
+				}
+				_parameters.forEach (mover);
+				_request.userSettings = settings;
+				
+				// Start the generation process
+				_generator.generate (_request);
+			}
+			
+			/**
+			 * Used in conjunction with the preset manager library, in order to retrieve (and possibly store
+			 * as a preset) the user's current settings.
+			 * 
+			 * @return	An Object containing parameter uids as keys and their respective values as Object
+			 * 			values.
+			 */
+			private function _readCurrentSettings () : Object {
+				var output : Object = {};
+				
+				// Populates the `output` Object with the current value of each parameter. 
+				var mover : Function = function  (parameter : IParameter, index : int, list : IParametersList) : void {
+					output[parameter.name] = parameter.payload;
+				}
+				_parameters.forEach (mover);
+				return output;
+			}
+			
+			/**
+			 * Used in conjunction with the preset manager library, in order to transfer a stored preset 
+			 * into the current settings. For both the UI and the underlying generator, this will be a
+			 * completely transparent process (it will be as if the user entered by hand each value stored
+			 * inside the preset).
+			 * 
+			 * @param	settings
+			 * 			An Object containing parameter uids as keys and their respective values as Object
+			 * 			values. This is semantically identical to the Object returned by 
+			 * 			`_readCurrentSettings()`.
+			 */
+			private function _writeCurrentSettings (settings : Object) : void {				
+				
+				// Sets each parameter's current value to the corresponding value stored inside the `settings` Object
+				var mover : Function = function  (parameter : IParameter, index : int, list : IParametersList) : void {
+					parameter.payload = settings[parameter.name];
+				}
+				_parameters.forEach (mover);
+				_resetForm ();
+			}
+			
+			/**
+			 * Notifies the preset manager of a particular change in the current settings. This causes the manager to
+			 * evaluate update the currently selected preset in the presets list if the current set should match an
+			 * existing settings combinations. In turn, this prevents identical presets from being created.
+			 */
+			private function _respondToSettingUpdate (settingName : String, settingValue : Object) : void {
+				if (!_currentSettings) {
+					_currentSettings = _readCurrentSettings();
+				}
+				_currentSettings[settingName] = settingValue;
+				presetManager.evaluate (_currentSettings);
+			}
+			
+			/**
+			 * Repopulates the form from the current dataset.
+			 */
+			private function _resetForm () : void {
+				
+				// Un-watch every item renderer, just in case they get rebuilt rather than recycled. 
+				if (_parameters && _parameters.length > 0) {
+					var mover : Function = function (parameter : IParameter, index : int, list : IParametersList) : void {
+						var renderer : ParameterUI = (_uiGenerator.getComponentByName(parameter.uid) as ParameterUI);
+						if (renderer) {
+							renderer.removeEventListener(Event.CHANGE, _onRendererValueChanged);
+						}
+					}
+					_parameters.forEach (mover);				
+				}
+				
+				// Purge all cache and discard the editor
+				_currentSettings = null;
+				_animatedParameters = {};
+				_hideEnvelopeEditor (true);
+				
+				// Re-instate everything
+				_renderParameters (_parameters, configurationForm, _onFormReady);
+			}
+			
+			/**
+			 * Assembles and returns a list of configurations to initialize the PresetManager
+			 * with. These will be considered "built-in presets", and will not be user changeable.
+			 */
+			private function _produceBuiltInConfigurations () : Vector.<Configuration> {
+				return Vector.<Configuration> ([
+				
+					(function (presetName : String) : Configuration {
+						var userSettings : Payload = new Payload;
+						userSettings.addDataChild (new Payload ({
+							"Analysis Window": 10,
+							"Chord Progression": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 100;
+								arr[42] = 100;
+								arr[49] = 13;
+								arr[55] = 100;
+								arr[72] = 100;
+								arr[79] = 11;
+								arr[85] = 100;
+								arr[100] = 100;
+								return arr;
+							})(),
+							"Durations to use": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 58;
+								arr[18] = 32;
+								arr[45] = 71;
+								arr[52] = 49;
+								arr[70] = 27;
+								arr[78] = 49;
+								arr[87] = 60;
+								arr[92] = 49;
+								arr[95] = 100;
+								arr[98] = 100;
+								return arr;
+							})(),
+							"Hazard": 0,
+							"Heterogeneity": 200,
+							"Highest permitted pitch": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 1;
+								arr[19] = 11;
+								arr[43] = 1;
+								arr[50] = 1;
+								arr[60] = 26;
+								arr[78] = 1;
+								arr[88] = 17;
+								arr[94] = 1;
+								arr[100] = 1;
+								return arr;
+							})(),
+							"Intrinsic Consonance": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 82;
+								arr[19] = 73;
+								arr[47] = 82;
+								arr[59] = 59;
+								arr[78] = 100;
+								arr[88] = 82;
+								arr[94] = 100;
+								arr[99] = 100;
+								return arr;
+							})(),
+							"Lowest permitted pitch": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 100;
+								arr[42] = 100;
+								arr[49] = 13;
+								arr[55] = 100;
+								arr[72] = 100;
+								arr[79] = 11;
+								arr[85] = 100;
+								arr[100] = 100;
+								return arr;
+							})(),
+							"Number of Voices": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 37;
+								arr[16] = 68;
+								arr[43] = 51;
+								arr[51] = 51;
+								arr[59] = 68;
+								arr[78] = 50;
+								arr[87] = 67;
+								arr[93] = 56;
+								arr[99] = 27;
+								return arr;
+							})()
+						}));
+						return new Configuration (presetName, true, userSettings);
+					})('Three Phrases (High CPU)'),
+					
+					(function (presetName : String) : Configuration {
+						var userSettings : Payload = new Payload;
+						userSettings.addDataChild (new Payload ({
+							"Analysis Window": 10,
+							"Chord Progression": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 100;
+								arr[100] = 100;
+								return arr;
+							})(),
+							"Durations to use": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 91;
+								arr[10] = 91;
+								arr[18] = 1;
+								arr[25] = 91;
+								arr[36] = 91;
+								arr[37] = 100;
+								arr[48] = 100;
+								arr[49] = 91;
+								arr[62] = 91;
+								arr[71] = 1;
+								arr[77] = 91;
+								arr[85] = 91;
+								arr[86] = 99;
+								arr[99] = 100;
+								return arr;
+							})(),
+							"Hazard": 0,
+							"Heterogeneity": 200,
+							"Highest permitted pitch": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 1;
+								arr[100] = 1;
+								return arr;
+							})(),
+							"Intrinsic Consonance": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 91;
+								arr[100] = 91;
+								return arr;
+							})(),
+							"Lowest permitted pitch": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 100;
+								arr[100] = 100;
+								return arr;
+							})(),
+							"Number of Voices": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 81;
+								arr[13] = 81;
+								arr[18] = 18;
+								arr[22] = 81;
+								arr[36] = 81;
+								arr[38] = 100;
+								arr[48] = 100;
+								arr[50] = 81;
+								arr[65] = 81;
+								arr[70] = 18;
+								arr[75] = 81;
+								arr[88] = 81;
+								arr[90] = 100;
+								arr[99] = 100;
+								return arr;
+							})()
+						}));
+						return new Configuration (presetName, true, userSettings);
+					})('Symmetric Polychords (High CPU)'),
+					
+					(function (presetName : String) : Configuration {
+						var userSettings : Payload = new Payload;
+						userSettings.addDataChild (new Payload ({
+							"Analysis Window": 10,
+							"Chord Progression": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 100;
+								arr[100] = 100;
+								return arr;
+							})(),
+							"Durations to use": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 1;
+								arr[12] = 39;
+								arr[29] = 67;
+								arr[44] = 83;
+								arr[60] = 87;
+								arr[73] = 84;
+								arr[82] = 66;
+								arr[90] = 24;
+								arr[91] = 100;
+								arr[100] = 100;
+								return arr;
+							})(),
+							"Hazard": 0,
+							"Heterogeneity": 200,
+							"Highest permitted pitch": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 1;
+								arr[100] = 1;
+								return arr;
+							})(),
+							"Intrinsic Consonance": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 100;
+								arr[15] = 79;
+								arr[29] = 64;
+								arr[48] = 52;
+								arr[65] = 45;
+								arr[79] = 40;
+								arr[91] = 40;
+								arr[92] = 100;
+								arr[100] = 100;
+								return arr;
+							})(),
+							"Lowest permitted pitch": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 100;
+								arr[100] = 100;
+								return arr;
+							})(),
+							"Number of Voices": (function() : Array {
+								var arr : Array = [];
+								arr[1] = 1;
+								arr[15] = 33;
+								arr[40] = 69;
+								arr[58] = 88;
+								arr[80] = 98;
+								arr[98] = 99;
+								return arr;
+							})()
+						}));
+						return new Configuration (presetName, true, userSettings);
+					})('From Conductus to Madrigal (High CPU)')
+				]);
+			}
+			
+			/**
+			 * Visually renders given parameters in given container, thus providing the user
+			 * the ability to set their values. Called from `_onInitialize()` and `_resetForm ()`.
+			 */
+			private function _renderParameters (source : IParametersList, target : DisplayObjectContainer, onComplete : Function) : void {
+				_formFields = { uiGeneratorConfig: {} };
+				_formReady = false;
+				
+				var animatedParameterUids : Array = [];
+				
+				// Translates intrinsic parameter properties, so that they can be used by the UI bluider library.
+				// This function is executed for each Parameter available inside the `source` parameters list. The function has no return value;
+				// instead, it populates the `_formFields` class member.
+				var mover : Function = function (parameter : IParameter, index : int, list : IParametersList) : void {
+					var parameterId : String = parameter.uid;
+					var parameterDefault : Object = parameter.payload;
+					var parameterType : Object = parameter.type;
+					if (parameterType == TYPE_ARRAY) {
+						var paramValues : Array = (parameterDefault as Array);
+						if (PointTools.pointsIncurTweening (paramValues)) {
+							_animatedParameters[parameterId] = parameter;
+							animatedParameterUids.push (parameterId);
+						}
+					}
+					_formFields[parameterId] = parameterDefault;
+					var fieldCfg : Object = _formFields.uiGeneratorConfig[parameterId] || (_formFields.uiGeneratorConfig[parameterId] = {});
+					fieldCfg.Index = index;
+					var componentCfg : Object = fieldCfg.CustomComponent || (fieldCfg.CustomComponent = {});
+					componentCfg.hideLabel = true;
+					componentCfg.parameterUid = parameterId;
+					componentCfg.label = parameter.name;
+					componentCfg.description = parameter.description;
+					componentCfg.documentationUrl = parameter.documentationUrl;
+					componentCfg.color = parameter.color;
+					componentCfg.icon = parameter.icon;
+					componentCfg.maxValue = parameter.maxValue;
+					componentCfg.minValue = parameter.minValue;
+					componentCfg.type = parameterType;
+					componentCfg.isTweenable = parameter.isTweenable;
+					componentCfg.dataproviderName = DATA_PROVIDER_NAME;
+					componentCfg.classFqn = CUSTOM_COMPONENT_FQN;
+				};
+				
+				// This function is executed after UI has been generated for all parameters.
+				// If the envelopes editor is required, it is shown, with the first of the available envelopes preselected.
+				var wrapper : Function = function () : void {
+					_formReady = true;
+					onComplete();
+					_updateEditorWorklist();
+					_focusParameterEnvelope (animatedParameterUids[0]);
+				}
+				source.forEach (mover);
+				_uiGenerator = new UiGenerator (UiFlexBuilder);
+				_uiGenerator.generate (_formFields, target, wrapper);
+			}
+			
+			/**
+			 * Compiles an ABC rendition of the given `musicalBody` and renders it in the browser using
+			 * Jeff Moine's `abc2svg` library.
+			 */
+			private function _renderMusic (musicalBody : IMusicalBody) : void {
+				
+				// Provide output file structure
+				var outputDir : File = OUTPUT_DIR.resolvePath(OUTPUT_DIR_NAME);
+				if (!outputDir.exists) {
+					outputDir.createDirectory();
+				}
+				var outputHtmlFile : File = outputDir.resolvePath(OUTPUT_FILE_NAME);
+				outputHtmlFile = Files.autoRename(outputHtmlFile);
+				var outputAbcFile : File = Files.changeFileExtension(outputHtmlFile, ABC_EXTENSION);
+				
+				// Prepare output file data
+				// We cannot simply call `abc2SvgDir.url` as this would result in an `app:/` scheme 
+				var fileName : String = Files.getStrippedOffFileName(outputHtmlFile);
+				var title : String = Strings.sprintf(TITLE_TEMPLATE, fileName, Time.timestamp)
+					.replace ('(', ' (');
+				
+				// Music
+				var abc2SvgDir : File = File.applicationDirectory.resolvePath('helpers').resolvePath('abc2svg');				
+				var tmpPath : String = abc2SvgDir.nativePath;
+				var tmpFile : File = new File (tmpPath);
+				var baseUrl : String = tmpFile.url;
+				var rawAbc : String = _compileAbc (musicalBody);	
+				var abc : String = JSON.stringify({"value" : rawAbc});
+				
+				// Chart
+				var chartData : String = _compileChartData ();
+				chartData = JSON.stringify(chartData);
+				
+				// Output HTML file
+				var reader : TextDiskReader = new TextDiskReader;
+				var templateFile : File = abc2SvgDir.resolvePath ('index_template.html');
+				var templateContent : String = reader.readContent(templateFile) as String;
+				var outputContent : String = templateContent
+					.replace (/\%ABC_SOURCE\%/g, abc)
+					.replace (/\%CHART_DATA\%/g, chartData)
+					.replace (/\%PAGE_TITLE\%/g, title)
+					.replace (/\%HOME_DIR\%/g, baseUrl);
+				var writer : TextDiskWritter = new TextDiskWritter;
+				writer.write (outputContent, outputHtmlFile);
+				
+				// Output music ABC file
+				writer.write (rawAbc.replace (/\%PAGE_TITLE\%/g, title), outputAbcFile);
+				
+				// Load open file in browser
+				navigateToURL (new URLRequest(outputHtmlFile.url));
+			}
+			
+			/**
+			 * Compiles to music ABC notation the given IMusicalBody.
+			 * @see http://abcnotation.com/
+			 */
+			private function _compileAbc (musicalBody : IMusicalBody) : String {
+				var i : int;
+				var j : int;
+				var unit : IMusicUnit;
+				var pitches : Vector.<IMusicPitch>;
+				var pitch : IMusicPitch;
+				var abcNote : String;
+				var abcDuration : String;
+				var chord : Array;
+				var chords : Array = [];
+				var scoreAnnotation : String;
+				var annotationLines : Array;
+				var scores : Array;
+				var score : Object;
+				for (i = 0; i < musicalBody.length; i++) {
+					unit = musicalBody.getAt(i);
+					scores = [];
+					scores.push (
+						{
+							abbr : 'C',
+							value : unit.analysisScores.getValueFor (ParameterNames.INTRINSIC_CONSONANCE)
+						},
+						{
+							abbr : 'P',
+							value : unit.analysisScores.getValueFor (ParameterNames.CHORD_PROGRESSION)
+						}
+					);
+					abcDuration = unit.duration.toString();
+					pitches = unit.pitches;
+					annotationLines = [];
+					for each (score in scores) {
+						annotationLines.push ([score.abbr, score.value].join (CommonStrings.EMPTY));
+					}
+					scoreAnnotation = Strings.quote ([CommonStrings.CIRCUMFLEX, annotationLines.join (CommonStrings.NEW_LINE)].join(CommonStrings.EMPTY));
+					chord = [Strings.sprintf(METER, abcDuration), scoreAnnotation, CHORD_BEGIN_MARK ];
+					for (j = 0; j < pitches.length; j++) {
+						pitch = pitches[j];
+						abcNote = _midiNumberToAbcNote (pitch.midiNote);
+						chord.push (abcNote, abcDuration);
+					}
+					chord.push (CHORD_END_MARK);
+					chords.push(chord.join(CommonStrings.EMPTY));
+				}
+				return ABC_TEMPLATE.replace ('%CHORDS%', chords.join(CommonStrings.PIPE));
+			}
+			
+			/**
+			 * Compiles the dataset for populating the included Charts.js instance
+			 * @see https://www.chartjs.org
+			 */
+			private function _compileChartData () : String {
+				return JSON.stringify(_generator.info.chartSource);
+			}
+			
+			/**
+			 * Converts given MIDI pitch to ABC note format, e.g., foe `60` it would return `C`.
+			 */
+			private function _midiNumberToAbcNote (midiNumber:int) : String {
+				var pitchIndex:int = (midiNumber % 12);
+				var octaveIndex:int = ((midiNumber - pitchIndex) / 12 - 1);
+				var pitchName : String = (ABC_CHROMATIC_SCALE[pitchIndex] as String);
+				var octaveTemplate : String = ABC_OCTAVE_MARKS[octaveIndex];
+				return (octaveTemplate.indexOf(LOWER_TOKEN) >= 0)?
+					octaveTemplate.replace(LOWER_TOKEN, pitchName.toLowerCase()) :
+						(octaveTemplate.indexOf(UPPER_TOKEN) >= 0)?
+							octaveTemplate.replace(UPPER_TOKEN, pitchName.toUpperCase()) : '';				
+			}
+			
+
+			/*
+			* Helper function for exporting the ActionScript code needed for saving a preset as
+			* a "built-in", or "system" preset.
+			*/
+			private function _exportUserSettings (output : Object) : void {
+				const TEMPLATE : String = "(function (presetName : String) : Configuration {\n\tvar userSettings : Payload = new Payload;\n\tuserSettings.addDataChild (new Payload ({\n%s\n\t}));\n\treturn new Configuration (presetName, true, userSettings);\n})('%s');";
+				const ARRAY_HEADER : String = "(function() : Array {\n\t\t\tvar arr : Array = [];\n";
+				const ARRAY_FOOTER : String = "\n\t\t\treturn arr;\n\t\t})()";
+				const ARRAY_BODY : Array = [];
+				const ARRAY_ENTRY_TEMPLATE : String = '\t\t\tarr[%d] = %d;';
+				const OBJECT_ENTRY_TEMPLATE : String = '\t\t"%s": %s';
+				var values : Array = [];
+				JSON.stringify (output, function (key : String, value : Object) : Object {
+					if (value is Array) {
+						var arr : Array = (value as Array);
+						ARRAY_BODY.length = 0;
+						for (var i:int = 0; i < arr.length; i++) {
+							if (arr[i] !== undefined) {
+								ARRAY_BODY.push (Strings.sprintf (ARRAY_ENTRY_TEMPLATE, i, arr[i]));
+							}							
+						}
+						if (key) {
+							values.push (
+								Strings.sprintf (
+									OBJECT_ENTRY_TEMPLATE,
+									key,
+									ARRAY_HEADER + ARRAY_BODY.join (CommonStrings.NEW_LINE) + ARRAY_FOOTER
+								)
+							)
+						}
+						return undefined;
+					} else {
+						if (key) {
+							values.push (Strings.sprintf (OBJECT_ENTRY_TEMPLATE, key, value));
+						}
+					}
+					return value;
+				});
+				values.sort();
+				trace (Strings.sprintf (TEMPLATE, values.join (CommonStrings.COMMA_NEW_LINE), Strings.generateUniqueId ({}, 32)));
+			}
+			
+		]]>
+	</fx:Script>
+
+	<!-- Page container -->
+	<s:Group width="100%" height="100%">
+		<s:layout>
+			<s:VerticalLayout gap="{2 * SPACE}" paddingTop="{SPACE}" paddingBottom="{SPACE}" />
+		</s:layout>
+
+		<!-- Body container -->
+		<s:Group width="100%" height="100%">
+			<s:layout>
+				<s:HorizontalLayout gap="{GAP_BETWEEN_PANES}" verticalAlign="justify"
+					paddingLeft="{SPACE}" paddingTop="{SPACE}" paddingRight="{SPACE}" />
+			</s:layout>
+			
+			<!-- Left Pane. List of parameters, operation buttons and progress bar -->
+			<s:Group width="{_envelopeEditorVisible? Math.max (LEFT_PANE_MIN_WIDTH, width * 0.3) : Math.max (LEFT_PANE_MIN_WIDTH, width - LEFT_PANE_RIGHT_GUTTER)}">
+				<s:layout>
+					<s:VerticalLayout gap="{3 * SPACE}" paddingLeft="{SPACE}" horizontalAlign="justify"/>
+				</s:layout>
+				
+				<!-- Preset Component. -->
+				<ui:PresetManagerUi id="presetManager" 
+					width="100%"
+					minHeight="95" />
+				
+				<!-- Loading notice -->
+				<s:Group visible="{!_formReady}" includeInLayout="{!_formReady}">
+					<s:Label width="100%" textAlign="center">Loading parameters...</s:Label>
+				</s:Group>
+				
+				<!-- Dynamic form for module parameters -->
+				<s:Scroller width="100%" height="100%" id="parametersScroller">
+					<s:Group visible="{_formReady}" id="configurationForm">
+						<s:layout>
+							<s:VerticalLayout horizontalAlign="justify" gap="{SPACE * 2.5}" 
+								paddingRight="{parametersScroller.verticalScrollBar.visible? SPACE : 0}"/>
+						</s:layout>
+					</s:Group>
+				</s:Scroller>
+			</s:Group>
+			
+			<!-- Right Pane. Parameters graphical editor -->
+			<components:ParametersGraphicalEditor id="parametersEditor" width="100%" 
+				visible="{_envelopeEditorVisible}" 
+				includeInLayout="{_envelopeEditorVisible}"
+				parameterChange="_onParameterChange(event)"
+				colorChange="_onParameterColorChange(event)"
+				nodesChange="_onNodesChange(event)" />
+		</s:Group>
+		
+		<!-- Footer container -->
+		<s:Group width="100%">
+			<s:layout>
+				<s:VerticalLayout gap="{2 * SPACE}" paddingLeft="{SPACE}" paddingRight="{SPACE}" paddingBottom="{SPACE}" horizontalAlign="justify"/>
+			</s:layout>
+			
+			<!-- Progress bar -->
+			<s:Group id="progress_bar" width="100%" showEffect="{onShow}" hideEffect="{onHide}"
+					 visible="{_progress != 0 &amp;&amp; _progress != 1}">
+				<ns:ProgressBar width="100%" currentProgress="{_progress}" totalProgress="1" />
+			</s:Group>
+			
+			<!-- Form buttons -->
+			<s:Group id="buttons" width="100%">
+				<s:layout>
+					<s:HorizontalLayout gap="{SPACE}" verticalAlign="middle"/>
+				</s:layout>
+				<s:Button minWidth="{MIN_BUTTON_WIDTH}" label="Generate" click="_generate()" fontWeight="bold" />
+				<s:Button minWidth="{MIN_BUTTON_WIDTH}" label="Abort" click="_abort()" />
+				<s:Button minWidth="{MIN_BUTTON_WIDTH}" label="Export Preset" click="_exportUserSettings (_readCurrentSettings())" />
+			</s:Group>
+
+		</s:Group>
+		
+	</s:Group>
+	
+</s:WindowedApplication>
